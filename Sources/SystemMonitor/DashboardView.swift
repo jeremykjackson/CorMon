@@ -38,7 +38,11 @@ struct DashboardView: View {
         .frame(minWidth: 440, minHeight: 500)
         .background(CanvasBackground())
         .cormonStyle()
-        .onAppear { WindowRouter.shared.register(openWindow) }
+        .onAppear {
+            WindowRouter.shared.register(openWindow)
+            monitor.setViewer("dashboard", visible: true)
+        }
+        .onDisappear { monitor.setViewer("dashboard", visible: false) }
         .toolbar {
             ToolbarItem {
                 Button {
@@ -183,7 +187,6 @@ struct PerCoreBars: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(LinearGradient(colors: [tint, tint.opacity(0.55)], startPoint: .top, endPoint: .bottom))
                             .frame(height: max(2, 34 * min(values[i], 1)))
-                            .animation(.easeOut(duration: 0.3), value: values[i])
                     }
                     .frame(height: 34)
                     .frame(maxWidth: .infinity)

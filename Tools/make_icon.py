@@ -1,4 +1,4 @@
-"""Renders the CorMon app icon (dark green monitor with a yellow heartbeat trace).
+"""Renders the CorMon app icon (dark green grid with a single yellow heartbeat).
 
 Usage: python3 Tools/make_icon.py Resources/AppIcon.icns
 Writes the .icns plus a 1024px PNG preview next to it.
@@ -30,13 +30,11 @@ def vertical_gradient(size, top, bottom):
 
 
 def ecg_points(x0, x1, mid, amp):
-    # One calm stretch, then a classic P-QRS-T complex, repeated twice.
+    # A single heartbeat: flat baseline, small P wave, tall QRS spike right of center, T wave.
     shape = [
-        (0.00, 0.0), (0.10, 0.0), (0.14, -0.10), (0.18, 0.0), (0.24, 0.0),
-        (0.27, 0.16), (0.31, -1.0), (0.35, 0.55), (0.38, 0.0), (0.46, -0.18),
-        (0.52, 0.0), (0.60, 0.0), (0.63, -0.10), (0.66, 0.0), (0.70, 0.0),
-        (0.73, 0.16), (0.77, -1.0), (0.81, 0.55), (0.84, 0.0), (0.91, -0.18),
-        (0.96, 0.0), (1.00, 0.0),
+        (0.00, 0.0), (0.30, 0.0), (0.36, -0.12), (0.42, 0.0), (0.50, 0.0),
+        (0.54, 0.14), (0.61, -1.0), (0.68, 0.62), (0.72, 0.0), (0.80, -0.20),
+        (0.87, 0.0), (1.00, 0.0),
     ]
     return [(x0 + (x1 - x0) * fx, mid + amp * fy) for fx, fy in shape]
 
@@ -44,10 +42,11 @@ def ecg_points(x0, x1, mid, amp):
 def render():
     img = Image.new("RGBA", (W, W), (0, 0, 0, 0))
 
-    # Squircle-ish tile with the standard macOS icon margin.
+    # Rounded tile with the standard macOS icon margin.
     m = 100 * SS
     tile_box = (m, m, W - m, W - m)
     radius = 185 * SS
+    tile_mask = rounded_mask((W, W), tile_box, radius)
 
     shadow = Image.new("RGBA", (W, W), (0, 0, 0, 0))
     ImageDraw.Draw(shadow).rounded_rectangle(
@@ -55,51 +54,39 @@ def render():
     shadow = shadow.filter(ImageFilter.GaussianBlur(22 * SS))
     img.alpha_composite(shadow)
 
-    tile = vertical_gradient((W, W), (24, 84, 58), (6, 38, 26))
-    img.paste(tile, (0, 0), rounded_mask((W, W), tile_box, radius))
-
-    # Inner "screen" recess.
-    inset = 150 * SS
-    screen_box = (inset, inset + 40 * SS, W - inset, W - inset - 40 * SS)
-    screen_r = 70 * SS
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle(screen_box, radius=screen_r, fill=(4, 26, 17, 255))
-    # Bezel highlight
-    d.rounded_rectangle(screen_box, radius=screen_r, outline=(70, 130, 95, 255), width=6 * SS)
-
-    # Faint grid on the screen.
+    # Everything below is drawn on a layer clipped to the tile, so the grid runs edge to edge.
+    art = vertical_gradient((W, W), (22, 78, 54), (5, 34, 23))
     grid = Image.new("RGBA", (W, W), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grid)
-    x0, y0, x1, y1 = screen_box
-    step = 62 * SS
-    for x in range(x0 + step, x1, step):
-        gd.line([(x, y0 + 10 * SS), (x, y1 - 10 * SS)], fill=(60, 120, 85, 70), width=2 * SS)
-    for y in range(y0 + step, y1, step):
-        gd.line([(x0 + 10 * SS, y), (x1 - 10 * SS, y)], fill=(60, 120, 85, 70), width=2 * SS)
-    img.paste(grid, (0, 0), Image.composite(grid, Image.new("RGBA", (W, W)),
-                                            rounded_mask((W, W), screen_box, screen_r)).split()[3])
+    d = ImageDraw.Draw(grid)
+    step = 68 * SS
+    x0, y0, x1, y1 = tile_box
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    # Grid lines centered on the tile.
+    k = 0
+    while cx - k * step >= x0 - step:
+        for x in {cx - k * step, cx + k * step}:
+            d.line([(x, y0), (x, y1)], fill=(90, 165, 115, 70), width=2 * SS)
+        k += 1
+    k = 0
+    while cy - k * step >= y0 - step:
+        for y in {cy - k * step, cy + k * step}:
+            d.line([(x0, y), (x1, y)], fill=(90, 165, 115, 70), width=2 * SS)
+        k += 1
+    art.alpha_composite(grid)
 
-    # Heartbeat trace with a warm glow.
-    mid = (y0 + y1) / 2 + 30 * SS
-    pts = ecg_points(x0 + 40 * SS, x1 - 40 * SS, mid, 190 * SS)
+    # Heartbeat trace with a warm glow, running across the full width of the tile.
+    mid = cy + 40 * SS
+    pts = ecg_points(x0 - 20 * SS, x1 + 20 * SS, mid, 250 * SS)
     glow = Image.new("RGBA", (W, W), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).line(pts, fill=(255, 205, 40, 200), width=46 * SS, joint="curve")
-    glow = glow.filter(ImageFilter.GaussianBlur(24 * SS))
-    img.alpha_composite(glow)
-    d = ImageDraw.Draw(img)
-    d.line(pts, fill=(255, 208, 52, 255), width=22 * SS, joint="curve")
-    d.line(pts, fill=(255, 238, 150, 255), width=7 * SS, joint="curve")
-    for p in (pts[0], pts[-1]):
-        r = 11 * SS
-        d.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=(255, 208, 52, 255))
+    ImageDraw.Draw(glow).line(pts, fill=(255, 205, 40, 210), width=50 * SS, joint="curve")
+    glow = glow.filter(ImageFilter.GaussianBlur(26 * SS))
+    art.alpha_composite(glow)
+    d = ImageDraw.Draw(art)
+    d.line(pts, fill=(255, 208, 52, 255), width=24 * SS, joint="curve")
+    d.line(pts, fill=(255, 238, 150, 255), width=8 * SS, joint="curve")
 
-    # Soft top sheen on the tile.
-    sheen = Image.new("RGBA", (W, W), (0, 0, 0, 0))
-    ImageDraw.Draw(sheen).ellipse((-W * 0.2, -W * 0.75, W * 1.2, W * 0.42), fill=(255, 255, 255, 22))
-    sheen.putalpha(Image.composite(sheen.split()[3], Image.new("L", (W, W), 0),
-                                   rounded_mask((W, W), tile_box, radius)))
-    img.alpha_composite(sheen)
-
+    img.paste(art, (0, 0), tile_mask)
     return img.resize((S, S), Image.LANCZOS)
 
 

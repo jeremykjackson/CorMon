@@ -147,11 +147,12 @@ struct SystemInfo {
     var thermalState: ProcessInfo.ThermalState = .nominal
 }
 
-struct HealthIssue: Identifiable {
+struct HealthIssue: Identifiable, Equatable {
     enum Level { case warning, critical }
-    let id = UUID()
     let level: Level
     let message: String
+    // Stable identity, so SwiftUI updates rows in place instead of rebuilding them each sample.
+    var id: String { message }
 }
 
 enum OverallStatus {

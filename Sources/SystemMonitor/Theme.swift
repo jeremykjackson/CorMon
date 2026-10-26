@@ -128,30 +128,37 @@ struct GiltFrame: ViewModifier {
     var cornerRadius: CGFloat = 6
 
     func body(content: Content) -> some View {
+        // The shadow, texture and frame live in a background that never changes between
+        // samples, so Core Animation renders them once. A shadow on the live content would
+        // be recomputed off-screen on every update.
         content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(LinearGradient(colors: [Palette.panelTop, Palette.panelBottom],
-                                         startPoint: .top, endPoint: .bottom))
-            )
-            .background(
-                Image(nsImage: CanvasTexture.image)
-                    .resizable(resizingMode: .tile)
-                    .opacity(0.35)
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [Palette.giltLight, Palette.gilt, Palette.giltDark],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing),
-                                  lineWidth: 1.6)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: max(cornerRadius - 3, 2), style: .continuous)
-                    .strokeBorder((accent ?? Palette.gilt).opacity(0.28), lineWidth: 0.8)
-                    .padding(4)
-            )
-            .shadow(color: .black.opacity(0.55), radius: 10, x: 0, y: 6)
+            .background(FrameBackdrop(accent: accent, cornerRadius: cornerRadius))
+    }
+}
+
+private struct FrameBackdrop: View, Equatable {
+    var accent: Color?
+    var cornerRadius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        ZStack {
+            shape
+                .fill(LinearGradient(colors: [Palette.panelTop, Palette.panelBottom],
+                                     startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.55), radius: 10, x: 0, y: 6)
+            Image(nsImage: CanvasTexture.image)
+                .resizable(resizingMode: .tile)
+                .opacity(0.35)
+                .clipShape(shape)
+            shape
+                .strokeBorder(LinearGradient(colors: [Palette.giltLight, Palette.gilt, Palette.giltDark],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing),
+                              lineWidth: 1.6)
+            RoundedRectangle(cornerRadius: max(cornerRadius - 3, 2), style: .continuous)
+                .strokeBorder((accent ?? Palette.gilt).opacity(0.28), lineWidth: 0.8)
+                .padding(4)
+        }
     }
 }
 

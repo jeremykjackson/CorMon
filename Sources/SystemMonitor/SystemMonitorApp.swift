@@ -4,7 +4,9 @@ import AppKit
 @main
 struct CorMonApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var monitor = SystemMonitor.shared
+    // A plain reference, not @StateObject: the App itself must not observe the monitor,
+    // or every sample would re-evaluate all scenes. Views observe it via environmentObject.
+    private let monitor = SystemMonitor.shared
 
     init() {
         Prefs.registerDefaults()
@@ -31,7 +33,7 @@ struct CorMonApp: App {
             MenuPopoverView()
                 .environmentObject(monitor)
         } label: {
-            MenuBarLabel(monitor: monitor)
+            MenuBarLabel(model: monitor.menuBar)
         }
         .menuBarExtraStyle(.window)
     }

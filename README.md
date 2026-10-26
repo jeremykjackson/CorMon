@@ -26,6 +26,18 @@ It's ad-hoc signed, not notarized, so the first launch from Finder may need righ
 - **New look**: canvas texture, chiaroscuro lighting, gilt-framed panels, Baskerville titles, earth-pigment colors.
 - **New icon**: a heart monitor with a yellow trace on dark green; the menu bar shows a white heart-monitor glyph (with a dot when an alert is active).
 
+## Energy use
+
+CorMon is built to stay out of the way:
+
+- Cheap kernel counters (CPU, memory, network bytes, disk I/O) are read every refresh so the menu bar stays live.
+- Battery, Wi-Fi, IP address and volume capacity refresh on slower schedules (5–120 s). The per-app scan runs only while a window that lists apps is open.
+- With every window closed, CorMon only samples what the menu bar and health alerts need. The menu bar item redraws only when its text changes.
+- The UI updates once per sample, without animations or live shadows. The glance panel's view is torn down whenever it's hidden.
+- Timers use generous leeway so macOS can batch wake-ups.
+
+If you want it lighter still, set **Refresh every** to 5 seconds in Settings.
+
 ## What it shows
 
 | Section | Metrics |

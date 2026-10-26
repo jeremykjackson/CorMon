@@ -28,6 +28,13 @@ final class ProcessSampler {
         ticksToNanos = (UInt64(max(timebase.numer, 1)), UInt64(max(timebase.denom, 1)))
     }
 
+    /// Forgets the previous sample, so the next one starts a fresh measuring window
+    /// instead of averaging over a long pause.
+    func reset() {
+        previousCPU = [:]
+        lastSample = nil
+    }
+
     func sample(groupByApp: Bool) -> [AppUsage] {
         let now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         let elapsed = lastSample.map { now > $0 ? Double(now - $0) : 0 } ?? 0

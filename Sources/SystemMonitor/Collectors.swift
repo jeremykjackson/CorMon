@@ -311,7 +311,13 @@ final class NetworkSampler {
     private var sessionDown: UInt64 = 0
     private var sessionUp: UInt64 = 0
 
-    func sample() -> NetworkMetrics {
+    // Slow-changing details are cached and refreshed on their own schedule:
+    // SCDynamicStore and CoreWLAN calls are XPC round-trips to system daemons.
+    private var cachedPrimary: String?
+    private var cachedIP: String?
+    private var cachedWiFi: (iface: String?, rssi: Int?, noise: Int?, rate: Double?) = (nil, nil, nil, nil)
+
+    func sample(refreshAddress: Bool, refreshWiFi: Bool) -> NetworkMetrics {
         var m = NetworkMetrics()
         let now = ProcessInfo.processInfo.systemUptime
         let counters = Self.readCounters()
@@ -337,20 +343,30 @@ final class NetworkSampler {
         m.sessionUp = sessionUp
         m.active = active.sorted { $0.down + $0.up > $1.down + $1.up }
 
-        if let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString) as? [String: Any] {
-            m.primaryInterface = global["PrimaryInterface"] as? String
+        if refreshAddress {
+            let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
+            cachedPrimary = global?["PrimaryInterface"] as? String
+            cachedIP = cachedPrimary.flatMap { Self.ipv4Address(for: $0) }
         }
-        if let iface = m.primaryInterface { m.localIP = Self.ipv4Address(for: iface) }
+        m.primaryInterface = cachedPrimary
+        m.localIP = cachedIP
 
-        if let wifi = CWWiFiClient.shared().interface() {
-            m.wifiInterface = wifi.interfaceName
-            let rssi = wifi.rssiValue()
-            if rssi != 0 {
-                m.wifiRSSI = rssi
-                m.wifiNoise = wifi.noiseMeasurement()
-                m.wifiTxRate = wifi.transmitRate()
+        if refreshWiFi {
+            cachedWiFi = (nil, nil, nil, nil)
+            if let wifi = CWWiFiClient.shared().interface() {
+                cachedWiFi.iface = wifi.interfaceName
+                let rssi = wifi.rssiValue()
+                if rssi != 0 {
+                    cachedWiFi.rssi = rssi
+                    cachedWiFi.noise = wifi.noiseMeasurement()
+                    cachedWiFi.rate = wifi.transmitRate()
+                }
             }
         }
+        m.wifiInterface = cachedWiFi.iface
+        m.wifiRSSI = cachedWiFi.rssi
+        m.wifiNoise = cachedWiFi.noise
+        m.wifiTxRate = cachedWiFi.rate
         return m
     }
 
@@ -463,12 +479,44 @@ struct Snapshot {
 }
 
 /// Owns the stateful samplers. Only ever used from the monitor's serial background queue.
+///
+/// Cheap kernel counters (CPU, memory, network bytes, disk I/O) are read every tick so the
+/// menu bar stays live. Anything that costs an XPC round-trip or a full process scan runs on
+/// its own slower schedule, and the per-app scan stops entirely while no window shows it.
 final class Collector {
+    /// True while the dashboard, menu bar panel or glance panel is on screen.
+    var detailed = false {
+        didSet {
+            guard detailed != oldValue else { return }
+            if detailed {
+                // Bring everything up to date as soon as something becomes visible.
+                lastBattery = -.infinity
+                lastAddress = -.infinity
+                lastWiFi = -.infinity
+                lastVolumeRead = -.infinity
+            }
+            processSampler.reset()
+            cachedTopCPU = []
+            cachedTopMemory = []
+        }
+    }
+
     private let cpuSampler = CPUSampler()
     private let diskIOSampler = DiskIOSampler()
     private let networkSampler = NetworkSampler()
     private let processSampler = ProcessSampler()
+
     private var lastVolumeRead: TimeInterval = -.infinity
+    private var lastBattery: TimeInterval = -.infinity
+    private var lastAddress: TimeInterval = -.infinity
+    private var lastWiFi: TimeInterval = -.infinity
+    private var lastProcesses: TimeInterval = -.infinity
+    private var lastSystem: TimeInterval = -.infinity
+
+    private var cachedBattery = BatteryMetrics()
+    private var cachedSystem = SystemInfo()
+    private var cachedTopCPU: [AppUsage] = []
+    private var cachedTopMemory: [AppUsage] = []
 
     private lazy var cpuStatic: (brand: String, cores: Int, p: Int?, e: Int?) = (
         Sysctl.string("machdep.cpu.brand_string") ?? "",
@@ -477,7 +525,16 @@ final class Collector {
         Sysctl.int("hw.perflevel1.logicalcpu")
     )
 
+    /// Returns true (and records the time) when `interval` seconds have passed since `last`.
+    private static func due(_ last: inout TimeInterval, every interval: TimeInterval, now: TimeInterval) -> Bool {
+        guard now - last >= interval else { return false }
+        last = now
+        return true
+    }
+
     func collect() -> Snapshot {
+        let now = ProcessInfo.processInfo.systemUptime
+
         let usage = cpuSampler.sample()
         var cpu = CPUMetrics()
         cpu.total = usage.total
@@ -491,30 +548,42 @@ final class Collector {
         cpu.performanceCores = cpuStatic.p
         cpu.efficiencyCores = cpuStatic.e
 
-        // Volume capacity changes slowly; refresh every 15 s.
-        let now = ProcessInfo.processInfo.systemUptime
         var volumes: [DiskVolume]?
-        if now - lastVolumeRead >= 15 {
+        if Self.due(&lastVolumeRead, every: detailed ? 15 : 120, now: now) {
             volumes = DiskReader.volumes()
-            lastVolumeRead = now
         }
 
-        let defaults = UserDefaults.standard
-        let apps = processSampler.sample(groupByApp: defaults.bool(forKey: Prefs.groupApps))
-        let limit = 12
-        let topCPU = Array(apps.sorted { $0.cpu > $1.cpu }.prefix(limit))
-        let topMemory = Array(apps.sorted { $0.memory > $1.memory }.prefix(limit))
+        if Self.due(&lastBattery, every: detailed ? 5 : 30, now: now) {
+            cachedBattery = PowerReader.read()
+        }
+
+        if Self.due(&lastSystem, every: 10, now: now) {
+            cachedSystem = SystemInfoReader.read()
+        }
+
+        let network = networkSampler.sample(
+            refreshAddress: Self.due(&lastAddress, every: detailed ? 10 : 60, now: now),
+            refreshWiFi: detailed && Self.due(&lastWiFi, every: 10, now: now))
+
+        // The per-app scan touches every process, so it only runs while a list is visible,
+        // and never more often than every 3 seconds.
+        if detailed, Self.due(&lastProcesses, every: 2.9, now: now) {
+            let apps = processSampler.sample(groupByApp: UserDefaults.standard.bool(forKey: Prefs.groupApps))
+            let limit = 12
+            cachedTopCPU = Array(apps.sorted { $0.cpu > $1.cpu }.prefix(limit))
+            cachedTopMemory = Array(apps.sorted { $0.memory > $1.memory }.prefix(limit))
+        }
 
         return Snapshot(
             cpu: cpu,
             memory: MemoryReader.read(),
             volumes: volumes,
             diskIO: diskIOSampler.sample(),
-            battery: PowerReader.read(),
-            network: networkSampler.sample(),
-            system: SystemInfoReader.read(),
-            topCPU: topCPU,
-            topMemory: topMemory)
+            battery: cachedBattery,
+            network: network,
+            system: cachedSystem,
+            topCPU: cachedTopCPU,
+            topMemory: cachedTopMemory)
     }
 
     func forceVolumeRefresh() { lastVolumeRead = -.infinity }

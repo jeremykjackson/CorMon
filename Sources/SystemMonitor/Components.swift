@@ -123,8 +123,6 @@ struct RingGauge<Center: View>: View {
                                         center: .center, startAngle: .degrees(0), endAngle: .degrees(360)),
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .shadow(color: tint.opacity(0.45), radius: 4)
-                .animation(.easeOut(duration: 0.4), value: fraction)
             Circle()
                 .strokeBorder(Palette.gilt.opacity(0.5), lineWidth: 0.8)
                 .padding(-lineWidth / 2 - 3)
@@ -164,7 +162,6 @@ struct BarMeter: View {
                 Capsule()
                     .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
                     .frame(width: geo.size.width * min(max(fraction, 0), 1))
-                    .animation(.easeOut(duration: 0.4), value: fraction)
             }
         }
         .frame(height: height)
@@ -215,7 +212,6 @@ struct Sparkline: View {
                 }
                 Path { p in p.addLines(points) }
                     .stroke(tint, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-                    .shadow(color: tint.opacity(0.5), radius: 2)
             }
         }
     }
@@ -251,10 +247,11 @@ struct ChartWell<Content: View>: View {
 // MARK: - Stats
 
 struct Stat: Identifiable {
-    let id = UUID()
     let label: String
     let value: String
     var color: Color? = nil
+    // Labels are unique within a grid; a stable id lets SwiftUI update values in place.
+    var id: String { label }
 }
 
 struct StatGrid: View {
@@ -271,7 +268,7 @@ struct StatGrid: View {
                         .font(Typo.numeral(13.5))
                         .foregroundStyle(stat.color ?? Palette.ivory)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                        .truncationMode(.tail)
                 }
             }
         }

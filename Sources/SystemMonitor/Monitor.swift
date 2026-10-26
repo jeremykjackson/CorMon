@@ -70,28 +70,48 @@ enum Prefs {
 
 // MARK: - Monitor
 
+/// What the menu bar item shows. Kept separate from the full monitor so the status item
+/// only redraws when its visible text actually changes.
+final class MenuBarModel: ObservableObject {
+    @Published private(set) var text = ""
+    @Published private(set) var alert = false
+
+    func update(text: String, alert: Bool) {
+        if text != self.text { self.text = text }
+        if alert != self.alert { self.alert = alert }
+    }
+}
+
 final class SystemMonitor: ObservableObject {
     static let shared = SystemMonitor()
 
-    @Published private(set) var cpu = CPUMetrics()
-    @Published private(set) var memory = MemoryMetrics()
-    @Published private(set) var volumes: [DiskVolume] = []
-    @Published private(set) var diskIO = DiskIO()
-    @Published private(set) var diskHealth = DiskHealth()
-    @Published private(set) var battery = BatteryMetrics()
-    @Published private(set) var network = NetworkMetrics()
-    @Published private(set) var system = SystemInfo()
-    @Published private(set) var topCPU: [AppUsage] = []
-    @Published private(set) var topMemory: [AppUsage] = []
-    @Published private(set) var history = MetricHistory()
-    @Published private(set) var issues: [HealthIssue] = []
-    @Published private(set) var lastUpdated: Date?
+    let menuBar = MenuBarModel()
+
+    // Updated together once per sample, followed by a single objectWillChange,
+    // so SwiftUI re-renders once per tick rather than once per property.
+    private(set) var cpu = CPUMetrics()
+    private(set) var memory = MemoryMetrics()
+    private(set) var volumes: [DiskVolume] = []
+    private(set) var diskIO = DiskIO()
+    private(set) var diskHealth = DiskHealth()
+    private(set) var battery = BatteryMetrics()
+    private(set) var network = NetworkMetrics()
+    private(set) var system = SystemInfo()
+    private(set) var topCPU: [AppUsage] = []
+    private(set) var topMemory: [AppUsage] = []
+    private(set) var history = MetricHistory()
+    private(set) var issues: [HealthIssue] = []
+    private(set) var lastUpdated: Date?
 
     private let queue = DispatchQueue(label: "SystemMonitor.collect", qos: .utility)
     private let healthQueue = DispatchQueue(label: "SystemMonitor.health", qos: .background)
     private let collector = Collector()
     private var timer: DispatchSourceTimer?
     private var healthTimer: Timer?
+    private var defaultsObserver: NSObjectProtocol?
+
+    /// Windows currently showing detailed data (dashboard, menu panel, glance panel).
+    private var viewers: Set<String> = []
 
     var overallStatus: OverallStatus {
         if issues.contains(where: { $0.level == .critical }) { return .critical }
@@ -102,7 +122,8 @@ final class SystemMonitor: ObservableObject {
         let seconds = max(0.5, interval ?? Prefs.double(Prefs.refreshInterval))
         timer?.cancel()
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: seconds, leeway: .milliseconds(150))
+        // Generous leeway lets macOS batch our wake-ups with other work (saves energy).
+        t.schedule(deadline: .now(), repeating: seconds, leeway: .milliseconds(Int(seconds * 150)))
         let collector = self.collector
         t.setEventHandler { [weak self] in
             let snapshot = collector.collect()
@@ -113,9 +134,33 @@ final class SystemMonitor: ObservableObject {
 
         if healthTimer == nil {
             refreshDiskHealth()
-            healthTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-                self?.refreshDiskHealth()
+            let health = Timer(timeInterval: 600, repeats: true) { [weak self] _ in self?.refreshDiskHealth() }
+            health.tolerance = 60
+            RunLoop.main.add(health, forMode: .common)
+            healthTimer = health
+        }
+        if defaultsObserver == nil {
+            // Menu bar choices take effect immediately rather than at the next sample.
+            defaultsObserver = NotificationCenter.default.addObserver(
+                forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.updateMenuBar()
             }
+        }
+    }
+
+    /// Views call this from onAppear/onDisappear. While nothing detailed is visible,
+    /// CorMon only samples what the menu bar and health alerts need.
+    func setViewer(_ id: String, visible: Bool) {
+        let wasDetailed = !viewers.isEmpty
+        if visible { viewers.insert(id) } else { viewers.remove(id) }
+        let detailed = !viewers.isEmpty
+        guard detailed != wasDetailed else { return }
+        let collector = self.collector
+        queue.async { [weak self] in
+            collector.detailed = detailed
+            guard detailed else { return }
+            let snapshot = collector.collect()
+            DispatchQueue.main.async { self?.apply(snapshot) }
         }
     }
 
@@ -123,8 +168,10 @@ final class SystemMonitor: ObservableObject {
         healthQueue.async { [weak self] in
             let health = DiskHealthReader.read()
             DispatchQueue.main.async {
-                self?.diskHealth = health
-                self?.evaluate()
+                guard let self else { return }
+                self.objectWillChange.send()
+                self.diskHealth = health
+                self.evaluate()
             }
         }
         let collector = self.collector
@@ -132,6 +179,7 @@ final class SystemMonitor: ObservableObject {
     }
 
     private func apply(_ s: Snapshot) {
+        objectWillChange.send()
         cpu = s.cpu
         memory = s.memory
         if let v = s.volumes { volumes = v }
@@ -142,18 +190,36 @@ final class SystemMonitor: ObservableObject {
         topCPU = s.topCPU
         topMemory = s.topMemory
 
-        var h = history
-        h.push(s.cpu.total, \.cpu)
-        h.push(s.memory.usedFraction, \.memory)
-        h.push(s.network.downRate, \.netDown)
-        h.push(s.network.upRate, \.netUp)
-        h.push(s.diskIO.readRate, \.diskRead)
-        h.push(s.diskIO.writeRate, \.diskWrite)
-        h.push(s.battery.systemPowerW ?? abs(s.battery.batteryPowerW ?? 0), \.power)
-        history = h
+        history.push(s.cpu.total, \.cpu)
+        history.push(s.memory.usedFraction, \.memory)
+        history.push(s.network.downRate, \.netDown)
+        history.push(s.network.upRate, \.netUp)
+        history.push(s.diskIO.readRate, \.diskRead)
+        history.push(s.diskIO.writeRate, \.diskWrite)
+        history.push(s.battery.systemPowerW ?? abs(s.battery.batteryPowerW ?? 0), \.power)
 
         lastUpdated = Date()
         evaluate()
+        updateMenuBar()
+    }
+
+    private func updateMenuBar() {
+        let d = UserDefaults.standard
+        let bits = d.bool(forKey: Prefs.networkInBits)
+        var parts: [String] = []
+        if d.bool(forKey: Prefs.mbCPU) { parts.append("CPU \(Fmt.percent(cpu.total))") }
+        if d.bool(forKey: Prefs.mbMemory) { parts.append("MEM \(Fmt.percent(memory.usedFraction))") }
+        if d.bool(forKey: Prefs.mbDisk), let root = volumes.first { parts.append("SSD \(Fmt.disk(root.available))") }
+        if d.bool(forKey: Prefs.mbNetwork) {
+            parts.append("↓\(Fmt.compactRate(network.downRate, bits: bits)) ↑\(Fmt.compactRate(network.upRate, bits: bits))")
+        }
+        if d.bool(forKey: Prefs.mbBattery), battery.present {
+            parts.append("\(battery.isCharging ? "⚡︎" : "")\(battery.percent)%")
+        }
+        if d.bool(forKey: Prefs.mbPower), let w = history.power.last, w > 0 {
+            parts.append(String(format: "%.1fW", w))
+        }
+        menuBar.update(text: parts.joined(separator: "  "), alert: !issues.isEmpty)
     }
 
     /// Builds the list of health issues from the current readings and user thresholds.
@@ -214,7 +280,7 @@ final class SystemMonitor: ObservableObject {
         default: break
         }
 
-        issues = found
+        if found != issues { issues = found }
     }
 }
 

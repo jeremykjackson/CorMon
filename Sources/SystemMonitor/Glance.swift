@@ -71,7 +71,8 @@ final class GlancePanelController: NSObject {
     /// Starts polling the pointer position (10×/second; negligible CPU).
     func startWatching() {
         watchTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
+        let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in self?.tick() }
+        timer.tolerance = 0.04
         RunLoop.main.add(timer, forMode: .common)
         watchTimer = timer
     }
@@ -119,10 +120,12 @@ final class GlancePanelController: NSObject {
         let panel = self.panel ?? makePanel()
         guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
 
-        if let hostingView {
-            hostingView.layoutSubtreeIfNeeded()
-            panel.setContentSize(hostingView.fittingSize)
-        }
+        // The SwiftUI content only exists while the panel is on screen, so a hidden
+        // panel doesn't keep re-rendering every sample.
+        let host = hostingView ?? makeHostingView()
+        if panel.contentView !== host { panel.contentView = host }
+        host.layoutSubtreeIfNeeded()
+        panel.setContentSize(host.fittingSize)
         let size = panel.frame.size
         let area = screen.visibleFrame
         let margin: CGFloat = 4
@@ -163,6 +166,8 @@ final class GlancePanelController: NSObject {
         }, completionHandler: { [weak self] in
             guard let self, !self.isVisible else { return }
             panel.orderOut(nil)
+            panel.contentView = nil
+            self.hostingView = nil
         })
     }
 
@@ -179,14 +184,17 @@ final class GlancePanelController: NSObject {
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
+        self.panel = panel
+        return panel
+    }
+
+    private func makeHostingView() -> NSHostingView<AnyView> {
         let host = NSHostingView(rootView: AnyView(
             GlanceView(close: { [weak self] in self?.hide() })
                 .environmentObject(SystemMonitor.shared)
         ))
-        panel.contentView = host
         hostingView = host
-        self.panel = panel
-        return panel
+        return host
     }
 }
 
@@ -233,6 +241,8 @@ struct GlanceView: View {
         .giltFrame(cornerRadius: 10)
         .padding(14)                     // room for the shadow inside the transparent panel
         .cormonStyle()
+        .onAppear { m.setViewer("glance", visible: true) }
+        .onDisappear { m.setViewer("glance", visible: false) }
     }
 
     private var header: some View {
