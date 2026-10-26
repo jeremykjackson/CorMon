@@ -1,9 +1,10 @@
 import SwiftUI
 import AppKit
 
-/// Text shown in the menu bar. Built as a single string so it renders cleanly in the status item.
+/// The menu bar item: a white heart-monitor glyph plus any readouts the user picked.
 struct MenuBarLabel: View {
     @ObservedObject var monitor: SystemMonitor
+    @Environment(\.openWindow) private var openWindow
 
     @AppStorage(Prefs.mbIcon) private var showIcon = true
     @AppStorage(Prefs.mbCPU) private var showCPU = true
@@ -16,24 +17,17 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let text = composed
-        if text.isEmpty {
-            Image(systemName: icon)
-        } else if showIcon {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
+        Group {
+            if text.isEmpty || showIcon {
+                HStack(spacing: 4) {
+                    Image(nsImage: monitor.issues.isEmpty ? HeartMonitorGlyph.normal : HeartMonitorGlyph.alert)
+                    if !text.isEmpty { Text(text).monospacedDigit() }
+                }
+            } else {
                 Text(text).monospacedDigit()
             }
-        } else {
-            Text(text).monospacedDigit()
         }
-    }
-
-    private var icon: String {
-        switch monitor.overallStatus {
-        case .healthy: return "gauge.with.dots.needle.33percent"
-        case .attention: return "exclamationmark.triangle"
-        case .critical: return "exclamationmark.octagon"
-        }
+        .onAppear { WindowRouter.shared.register(openWindow) }
     }
 
     private var composed: String {
@@ -66,15 +60,18 @@ struct MenuPopoverView: View {
     @AppStorage(Prefs.showDisk) private var showDisk = true
     @AppStorage(Prefs.showPower) private var showPower = true
     @AppStorage(Prefs.showNetwork) private var showNetwork = true
+    @AppStorage(Prefs.showApps) private var showApps = true
     @AppStorage(Prefs.networkInBits) private var inBits = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(m.system.model.isEmpty ? "System Monitor" : m.system.model).font(.headline).lineLimit(1)
+                    Text("CorMon").font(Typo.title(20)).foregroundStyle(Palette.giltLight)
+                    Text(m.system.model.isEmpty ? "System Monitor" : m.system.model)
+                        .font(Typo.titleItalic(12)).foregroundStyle(Palette.ivory).lineLimit(1)
                     Text("Up \(Fmt.duration(m.system.uptime)) · Thermal \(m.system.thermalState.label)")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(Typo.caption()).foregroundStyle(Palette.parchment)
                 }
                 Spacer()
                 StatusPill(status: m.overallStatus)
@@ -84,18 +81,18 @@ struct MenuPopoverView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(m.issues.prefix(3)) { issue in
                         Label(issue.message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(issue.level == .critical ? Color.red : Color.orange)
+                            .font(Typo.body(11.5, .medium))
+                            .foregroundStyle(issue.level == .critical ? Palette.danger : Palette.warn)
                     }
                 }
             }
 
-            Divider()
+            Fleuron()
 
             if showCPU {
-                CompactRow(icon: "cpu", title: "CPU", tint: .cpuTint,
+                CompactRow(icon: "cpu", title: "Processor", tint: .cpuTint,
                            value: Fmt.percent(m.cpu.total),
-                           subtitle: String(format: "Load %.2f", m.cpu.load1)) {
+                           subtitle: String(format: "load %.2f", m.cpu.load1)) {
                     Sparkline(values: m.history.cpu, maxValue: 1, tint: .cpuTint)
                 }
             }
@@ -133,22 +130,36 @@ struct MenuPopoverView: View {
                     }
                 }
             }
+            if showApps {
+                Fleuron()
+                HStack(alignment: .top, spacing: 14) {
+                    AppList(title: "Top processor", apps: Array(m.topCPU.prefix(3)), metric: .cpu, compact: true)
+                    AppList(title: "Top memory", apps: Array(m.topMemory.prefix(3)), metric: .memory, compact: true)
+                }
+            }
 
-            Divider()
+            Fleuron()
 
-            HStack {
-                Button("Open Dashboard") { open("dashboard") }
+            HStack(spacing: 14) {
+                Button("Dashboard") { open("dashboard") }
                     .keyboardShortcut("d")
+                Button("Glance") { GlancePanelController.shared.toggle() }
+                    .keyboardShortcut("g")
                 Button("Customize…") { open("settings") }
                     .keyboardShortcut(",")
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
-            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .font(Typo.body(12.5, .medium))
+            .foregroundStyle(Palette.gilt)
         }
-        .padding(14)
-        .frame(width: 340)
+        .padding(16)
+        .frame(width: 360)
+        .background(CanvasBackground())
+        .cormonStyle()
+        .onAppear { WindowRouter.shared.register(openWindow) }
     }
 
     private func open(_ id: String) {
@@ -159,7 +170,7 @@ struct MenuPopoverView: View {
     private func powerSubtitle(_ b: BatteryMetrics) -> String {
         guard b.present else { return "No battery" }
         var parts = [b.stateText]
-        if let h = b.healthFraction { parts.append("Health \(Fmt.percent(h))") }
+        if let h = b.healthFraction { parts.append("health \(Fmt.percent(h))") }
         if let c = b.cycleCount { parts.append("\(c) cycles") }
         return parts.joined(separator: " · ")
     }
@@ -178,17 +189,19 @@ struct CompactRow<Graph: View>: View {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Palette.well))
+                .overlay(Circle().strokeBorder(tint.opacity(0.6), lineWidth: 1))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(title).font(.callout.weight(.medium)).lineLimit(1)
+                    Text(title).font(Typo.title(14)).foregroundStyle(Palette.ivory).lineLimit(1)
                     Spacer()
-                    Text(value).font(.system(.callout, design: .rounded).weight(.semibold)).monospacedDigit()
+                    Text(value).font(Typo.numeral(13.5)).foregroundStyle(Palette.ivory)
                 }
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle).font(Typo.titleItalic(11.5)).foregroundStyle(Palette.parchment).lineLimit(1)
             }
-            graph.frame(width: 70, height: 24)
+            ChartWell(height: 26) { graph }
+                .frame(width: 74)
         }
     }
 }

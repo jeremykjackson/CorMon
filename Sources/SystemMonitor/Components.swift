@@ -1,28 +1,37 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 extension Color {
-    static let cpuTint = Color.blue
-    static let memoryTint = Color.purple
-    static let diskTint = Color.orange
-    static let powerTint = Color.green
-    static let networkTint = Color.teal
-    static let uploadTint = Color.pink
+    static let cpuTint = Palette.ochre
+    static let memoryTint = Palette.sienna
+    static let diskTint = Palette.verdigris
+    static let powerTint = Palette.sapGreen
+    static let networkTint = Palette.lapis
+    static let uploadTint = Palette.madder
 }
 
 extension OverallStatus {
     var color: Color {
         switch self {
-        case .healthy: return .green
-        case .attention: return .orange
-        case .critical: return .red
+        case .healthy: return Palette.good
+        case .attention: return Palette.warn
+        case .critical: return Palette.danger
         }
     }
     var symbol: String {
         switch self {
-        case .healthy: return "checkmark.seal.fill"
+        case .healthy: return "heart.fill"
         case .attention: return "exclamationmark.triangle.fill"
         case .critical: return "xmark.octagon.fill"
+        }
+    }
+    /// Shown in italics under the status, in keeping with the painted theme.
+    var motto: String {
+        switch self {
+        case .healthy: return "in good health"
+        case .attention: return "requires attention"
+        case .critical: return "in distress"
         }
     }
 }
@@ -39,25 +48,26 @@ extension ProcessInfo.ThermalState {
     }
     var color: Color {
         switch self {
-        case .nominal: return .green
-        case .fair: return .yellow
-        case .serious: return .orange
-        default: return .red
+        case .nominal: return Palette.good
+        case .fair: return Palette.ochre
+        case .serious: return Palette.warn
+        default: return Palette.danger
         }
     }
 }
 
-/// Green → yellow → red as a value approaches its warning threshold.
+/// Section pigment, shifting to warning colors as a value approaches its threshold.
 func loadColor(_ fraction: Double, warn: Double = 0.75, critical: Double = 0.9, base: Color) -> Color {
-    if fraction >= critical { return .red }
-    if fraction >= warn { return .orange }
+    if fraction >= critical { return Palette.danger }
+    if fraction >= warn { return Palette.warn }
     return base
 }
 
-// MARK: - Card
+// MARK: - Card (a framed painting)
 
 struct Card<Content: View>: View {
     let title: String
+    var subtitle: String? = nil
     let icon: String
     let tint: Color
     var detail: String? = nil
@@ -65,26 +75,33 @@ struct Card<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 26, height: 26)
-                    .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                Text(title).font(.headline)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Palette.well))
+                    .overlay(Circle().strokeBorder(tint.opacity(0.6), lineWidth: 1))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(Typo.title(19)).foregroundStyle(Palette.ivory)
+                    if let subtitle {
+                        Text(subtitle).font(Typo.titleItalic(12)).foregroundStyle(Palette.parchment)
+                    }
+                }
                 Spacer(minLength: 8)
                 if let detail {
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(detail).font(Typo.caption()).foregroundStyle(Palette.parchment).lineLimit(1)
                 }
             }
+            Rectangle()
+                .fill(LinearGradient(colors: [tint.opacity(0.8), Palette.gilt.opacity(0.25), .clear],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(height: 1)
             content
         }
-        .padding(16)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Color.primary.opacity(0.07)))
+        .giltFrame(accent: tint)
     }
 }
 
@@ -98,15 +115,22 @@ struct RingGauge<Center: View>: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(tint.opacity(0.15), lineWidth: lineWidth)
+            Circle().fill(Palette.well)
+            Circle().stroke(Palette.giltDark.opacity(0.45), lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: min(max(fraction, 0), 1))
-                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .stroke(AngularGradient(colors: [tint.opacity(0.65), tint, Palette.giltLight],
+                                        center: .center, startAngle: .degrees(0), endAngle: .degrees(360)),
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .shadow(color: tint.opacity(0.45), radius: 4)
                 .animation(.easeOut(duration: 0.4), value: fraction)
+            Circle()
+                .strokeBorder(Palette.gilt.opacity(0.5), lineWidth: 0.8)
+                .padding(-lineWidth / 2 - 3)
             center
         }
-        .padding(lineWidth / 2)
+        .padding(lineWidth / 2 + 3)
     }
 }
 
@@ -116,13 +140,14 @@ struct BigValue: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(value)
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
-                .monospacedDigit()
+                .font(Typo.numeral(21))
+                .foregroundStyle(Palette.ivory)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            Text(caption).font(.caption2).foregroundStyle(.secondary)
+            Text(caption).font(Typo.titleItalic(11)).foregroundStyle(Palette.parchment)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 8)
     }
 }
 
@@ -134,8 +159,10 @@ struct BarMeter: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(tint.opacity(0.15))
-                Capsule().fill(tint)
+                Capsule().fill(Palette.well)
+                Capsule().strokeBorder(Palette.giltDark.opacity(0.5), lineWidth: 0.5)
+                Capsule()
+                    .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
                     .frame(width: geo.size.width * min(max(fraction, 0), 1))
                     .animation(.easeOut(duration: 0.4), value: fraction)
             }
@@ -158,8 +185,9 @@ struct SegmentedBar: View {
                 }
                 Spacer(minLength: 0)
             }
-            .background(Color.primary.opacity(0.08))
+            .background(Palette.well)
             .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(Palette.giltDark.opacity(0.5), lineWidth: 0.5))
         }
         .frame(height: height)
     }
@@ -182,11 +210,12 @@ struct Sparkline: View {
                         p.addLine(to: CGPoint(x: last.x, y: geo.size.height))
                         p.closeSubpath()
                     }
-                    .fill(LinearGradient(colors: [tint.opacity(0.30), tint.opacity(0.02)],
+                    .fill(LinearGradient(colors: [tint.opacity(0.38), tint.opacity(0.02)],
                                          startPoint: .top, endPoint: .bottom))
                 }
                 Path { p in p.addLines(points) }
-                    .stroke(tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    .stroke(tint, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                    .shadow(color: tint.opacity(0.5), radius: 2)
             }
         }
     }
@@ -202,6 +231,20 @@ struct Sparkline: View {
             let y = size.height - CGFloat(min(max(v / top, 0), 1)) * (size.height - 2) - 1
             return CGPoint(x: x, y: y)
         }
+    }
+}
+
+/// A sparkline set in a recessed "well", like a small painting within the frame.
+struct ChartWell<Content: View>: View {
+    var height: CGFloat
+    @ViewBuilder var content: Content
+    var body: some View {
+        content
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .frame(height: height)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Palette.well.opacity(0.85)))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Palette.giltDark.opacity(0.55), lineWidth: 0.6))
     }
 }
 
@@ -223,11 +266,10 @@ struct StatGrid: View {
                   alignment: .leading, spacing: 10) {
             ForEach(stats) { stat in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(stat.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(stat.label).font(Typo.titleItalic(12)).foregroundStyle(Palette.parchment).lineLimit(1)
                     Text(stat.value)
-                        .font(.system(.callout, design: .rounded).weight(.medium))
-                        .monospacedDigit()
-                        .foregroundStyle(stat.color ?? .primary)
+                        .font(Typo.numeral(13.5))
+                        .foregroundStyle(stat.color ?? Palette.ivory)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                 }
@@ -240,23 +282,25 @@ struct SectionLabel: View {
     var text: String
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .tracking(0.5)
+            .font(.system(size: 10, weight: .semibold, design: .serif))
+            .foregroundStyle(Palette.gilt)
+            .tracking(1.6)
     }
 }
 
+/// A wax-seal style status badge.
 struct StatusPill: View {
     var status: OverallStatus
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: status.symbol).font(.system(size: 11, weight: .semibold))
-            Text(status.title).font(.caption.weight(.semibold))
+            Image(systemName: status.symbol).font(.system(size: 10, weight: .bold))
+            Text(status.title).font(Typo.title(13))
         }
         .foregroundStyle(status.color)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 11)
         .padding(.vertical, 4)
-        .background(status.color.opacity(0.14), in: Capsule())
+        .background(Capsule().fill(Palette.well))
+        .overlay(Capsule().strokeBorder(status.color.opacity(0.7), lineWidth: 1))
     }
 }
 
@@ -266,7 +310,25 @@ struct LegendDot: View {
     var body: some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(text).font(.caption).foregroundStyle(.secondary)
+            Text(text).font(Typo.caption()).foregroundStyle(Palette.parchment)
         }
+    }
+}
+
+// MARK: - App icons for the top-apps lists
+
+final class AppIconCache {
+    static let shared = AppIconCache()
+    private var cache: [String: NSImage] = [:]
+
+    func icon(for usage: AppUsage) -> NSImage {
+        let path = usage.bundlePath ?? usage.executablePath
+        if let cached = cache[path] { return cached }
+        let icon = path.hasPrefix("/")
+            ? NSWorkspace.shared.icon(forFile: path)
+            : NSWorkspace.shared.icon(for: .unixExecutable)
+        icon.size = NSSize(width: 32, height: 32)
+        cache[path] = icon
+        return icon
     }
 }

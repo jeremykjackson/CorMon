@@ -458,6 +458,8 @@ struct Snapshot {
     var battery: BatteryMetrics
     var network: NetworkMetrics
     var system: SystemInfo
+    var topCPU: [AppUsage]
+    var topMemory: [AppUsage]
 }
 
 /// Owns the stateful samplers. Only ever used from the monitor's serial background queue.
@@ -465,6 +467,7 @@ final class Collector {
     private let cpuSampler = CPUSampler()
     private let diskIOSampler = DiskIOSampler()
     private let networkSampler = NetworkSampler()
+    private let processSampler = ProcessSampler()
     private var lastVolumeRead: TimeInterval = -.infinity
 
     private lazy var cpuStatic: (brand: String, cores: Int, p: Int?, e: Int?) = (
@@ -496,6 +499,12 @@ final class Collector {
             lastVolumeRead = now
         }
 
+        let defaults = UserDefaults.standard
+        let apps = processSampler.sample(groupByApp: defaults.bool(forKey: Prefs.groupApps))
+        let limit = 12
+        let topCPU = Array(apps.sorted { $0.cpu > $1.cpu }.prefix(limit))
+        let topMemory = Array(apps.sorted { $0.memory > $1.memory }.prefix(limit))
+
         return Snapshot(
             cpu: cpu,
             memory: MemoryReader.read(),
@@ -503,7 +512,9 @@ final class Collector {
             diskIO: diskIOSampler.sample(),
             battery: PowerReader.read(),
             network: networkSampler.sample(),
-            system: SystemInfoReader.read())
+            system: SystemInfoReader.read(),
+            topCPU: topCPU,
+            topMemory: topMemory)
     }
 
     func forceVolumeRefresh() { lastVolumeRead = -.infinity }

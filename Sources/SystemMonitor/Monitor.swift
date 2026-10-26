@@ -5,7 +5,16 @@ import Combine
 
 enum Prefs {
     static let refreshInterval = "refreshInterval"
-    static let showDockIcon = "showDockIcon"
+    static let runInBackground = "runInBackground"
+    static let legacyShowDockIcon = "showDockIcon"
+
+    static let glanceCorner = "glanceCorner"             // GlanceCorner raw value
+    static let glanceDelay = "glanceDelay"               // seconds the pointer must rest in the corner
+    static let glanceShowApps = "glanceShowApps"
+
+    static let showApps = "showApps"
+    static let groupApps = "groupApps"
+    static let topAppCount = "topAppCount"
 
     static let showSystem = "showSystem"
     static let showCPU = "showCPU"
@@ -33,9 +42,19 @@ enum Prefs {
     static let networkInBits = "networkInBits"
 
     static func registerDefaults() {
-        UserDefaults.standard.register(defaults: [
+        // v1 had "Show icon in Dock"; turning that off meant the same as running in the background.
+        // (Checked before registering defaults, which would otherwise mask "never set".)
+        let d = UserDefaults.standard
+        if d.object(forKey: runInBackground) == nil, d.object(forKey: legacyShowDockIcon) != nil {
+            d.set(!d.bool(forKey: legacyShowDockIcon), forKey: runInBackground)
+        }
+        d.register(defaults: [
             refreshInterval: 2.0,
-            showDockIcon: true,
+            runInBackground: false,
+            glanceCorner: GlanceCorner.bottomLeft.rawValue,
+            glanceDelay: 0.35,
+            glanceShowApps: true,
+            showApps: true, groupApps: true, topAppCount: 5,
             showSystem: true, showCPU: true, showMemory: true, showDisk: true,
             showPower: true, showNetwork: true, showPerCore: true,
             mbIcon: true, mbCPU: true, mbMemory: false, mbNetwork: true,
@@ -62,6 +81,8 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var battery = BatteryMetrics()
     @Published private(set) var network = NetworkMetrics()
     @Published private(set) var system = SystemInfo()
+    @Published private(set) var topCPU: [AppUsage] = []
+    @Published private(set) var topMemory: [AppUsage] = []
     @Published private(set) var history = MetricHistory()
     @Published private(set) var issues: [HealthIssue] = []
     @Published private(set) var lastUpdated: Date?
@@ -118,6 +139,8 @@ final class SystemMonitor: ObservableObject {
         battery = s.battery
         network = s.network
         system = s.system
+        topCPU = s.topCPU
+        topMemory = s.topMemory
 
         var h = history
         h.push(s.cpu.total, \.cpu)

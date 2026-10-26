@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct SystemMonitorApp: App {
+struct CorMonApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var monitor = SystemMonitor.shared
 
@@ -11,16 +11,17 @@ struct SystemMonitorApp: App {
     }
 
     var body: some Scene {
-        Window("System Monitor", id: "dashboard") {
+        Window("CorMon", id: "dashboard") {
             DashboardView()
                 .environmentObject(monitor)
         }
-        .defaultSize(width: 1080, height: 820)
+        .defaultSize(width: 1120, height: 860)
         .commands {
             CommandGroup(replacing: .appSettings) { SettingsMenuButton() }
+            CommandGroup(after: .windowArrangement) { GlanceMenuButton() }
         }
 
-        Window("Customize System Monitor", id: "settings") {
+        Window("Customize CorMon", id: "settings") {
             SettingsView()
                 .environmentObject(monitor)
         }
@@ -47,14 +48,47 @@ struct SettingsMenuButton: View {
     }
 }
 
+struct GlanceMenuButton: View {
+    var body: some View {
+        Button("Show Glance Panel") { GlancePanelController.shared.toggle() }
+            .keyboardShortcut("g", modifiers: [.command, .shift])
+    }
+}
+
+enum AppMode {
+    /// Background mode: no Dock icon or app-switcher entry; CorMon lives in the menu bar
+    /// and the hot corner, and keeps sampling while its windows are closed.
+    static func apply(runInBackground: Bool, activate: Bool = true) {
+        NSApp.setActivationPolicy(runInBackground ? .accessory : .regular)
+        if activate && !runInBackground {
+            DispatchQueue.main.async { NSApp.activate(ignoringOtherApps: true) }
+        }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let showDock = UserDefaults.standard.bool(forKey: Prefs.showDockIcon)
-        NSApp.setActivationPolicy(showDock ? .regular : .accessory)
-        if showDock { NSApp.activate(ignoringOtherApps: true) }
+        let background = UserDefaults.standard.bool(forKey: Prefs.runInBackground)
+        AppMode.apply(runInBackground: background)
         SystemMonitor.shared.start()
+        GlancePanelController.shared.startWatching()
+
+        // In background mode, start quietly: close the dashboard SwiftUI opens at launch.
+        if background {
+            DispatchQueue.main.async {
+                for window in NSApp.windows where window.identifier?.rawValue.contains("dashboard") == true {
+                    window.close()
+                }
+            }
+        }
     }
 
-    // Keep running in the menu bar after the dashboard window is closed.
+    // Keep running in the menu bar after the last window is closed.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    // Clicking the Dock icon with no windows open brings the dashboard back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { WindowRouter.shared.open("dashboard") }
+        return true
+    }
 }

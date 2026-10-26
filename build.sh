@@ -1,10 +1,10 @@
 #!/bin/bash
-# Builds "System Monitor.app" into ./build. Requires Xcode or the Command Line Tools
+# Builds "CorMon.app" into ./build. Requires Xcode or the Command Line Tools
 # (install with: xcode-select --install).
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="build/System Monitor.app"
+APP="build/CorMon.app"
 
 echo "▸ Compiling (release)…"
 swift build -c release
@@ -24,7 +24,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SystemMonitor"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# Optional custom icon: drop an AppIcon.icns into Resources/.
+# App icon (regenerate with: python3 Tools/make_icon.py Resources/AppIcon.icns)
 if [ -f Resources/AppIcon.icns ]; then
   cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 fi

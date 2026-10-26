@@ -1,59 +1,74 @@
-# System Monitor v1 (macOS)
+<p align="center"><img src="Resources/AppIcon.png" width="160" alt="CorMon icon"></p>
 
-A lightweight, native SwiftUI system monitor for your MacBook Pro. It lives in the menu bar and opens a full dashboard window. No dependencies, no background daemons, no admin rights.
+# CorMon
+
+*A portrait of your Mac.* A lightweight, native SwiftUI system monitor for macOS, painted in the warm umbers, ochres and gilt frames of 19th-century academic oil painting (after Fernand Cormon). It lives in the menu bar, slides out of a hot corner, and opens a full dashboard. No dependencies, no daemons, no admin rights.
 
 ## Build & run
 
 Requires macOS 13 (Ventura) or newer and Xcode or the Command Line Tools (`xcode-select --install`).
 
 ```bash
-cd SystemMonitor
-chmod +x build.sh
+git clone https://github.com/jeremykjackson/CorMon.git
+cd CorMon
 ./build.sh
-open "build/System Monitor.app"
+open build/CorMon.app
 ```
 
-To keep it: `cp -R "build/System Monitor.app" /Applications/`
+To keep it: `cp -R build/CorMon.app /Applications/` (needed for **Launch at login**).
+It's ad-hoc signed, not notarized, so the first launch from Finder may need right-click → **Open**.
 
-Because it's ad-hoc signed (not notarized), the first launch from Finder may need right-click → **Open**.
+## What's new in 2.0
+
+- **Hot-corner glance panel**: rest the pointer in a chosen screen corner and a small framed panel shows CPU, memory, battery, disk, network, alerts and the busiest apps. It fades away when you move off it. Also available from the menu bar or ⇧⌘G.
+- **Run in the background**: no Dock icon, starts without opening the dashboard, keeps measuring from the menu bar and hot corner.
+- **Busiest apps**: top apps by processor (per-core %, like Activity Monitor) and by memory footprint, with helper processes folded into their app.
+- **New look**: canvas texture, chiaroscuro lighting, gilt-framed panels, Baskerville titles, earth-pigment colors.
+- **New icon**: a heart monitor with a yellow trace on dark green; the menu bar shows a white heart-monitor glyph (with a dot when an alert is active).
 
 ## What it shows
 
 | Section | Metrics |
 |---|---|
-| **System health** | Overall status (Healthy / Needs Attention / Critical), active alerts, model, chip, macOS version, uptime, thermal state |
-| **CPU** | Total / user / system / idle %, load averages, 90-sample history, per-core bars (Efficiency vs Performance cores on Apple Silicon) |
-| **Memory** | Used %, memory pressure, app / wired / compressed breakdown, cached files, swap |
-| **Disk** | Every mounted volume (free / total, matching Finder), live read/write throughput, SMART status. With `brew install smartmontools`: SSD life used, spare, TB written/read, power-on hours, power cycles, unsafe shutdowns, media errors |
-| **Power** | Battery %, charging state, time remaining, health % (full-charge vs design capacity), cycle count, condition, temperature, voltage, battery in/out watts, whole-system power draw, adapter wattage, Low Power Mode |
-| **Network** | Download / upload speed, history graph, session and since-boot totals, primary interface, local IP, Wi-Fi signal (RSSI, noise, SNR, link rate) |
+| **Health summary** | Overall status, active alerts, model, chip, macOS, uptime, thermal state |
+| **Processor** | Total / user / system / idle, load averages, history, per-core bars (efficiency vs performance cores) |
+| **Memory** | Used %, memory pressure, app / wired / compressed, cached files, swap |
+| **Busiest apps** | Top N apps by CPU and by memory, with icons and process counts |
+| **Storage** | Every volume's free space, read/write throughput, SMART status; with `brew install smartmontools`: SSD life used, spare, data written/read, power-on hours, unsafe shutdowns, media errors |
+| **Power** | Battery %, time remaining, health vs design capacity, cycle count, condition, temperature, voltage, battery in/out watts, system power draw, adapter, Low Power Mode |
+| **Network** | Download / upload speed and history, session and since-boot totals, primary interface, local IP, Wi-Fi signal, noise, SNR, link rate |
 
 ## Customization (⌘, or "Customize…")
 
-- **General** — refresh rate (1/2/5/10 s), Dock icon on/off (menu-bar-only mode), launch at login, °C/°F, bytes/bits for network speed
-- **Dashboard** — show/hide each section and per-core bars
-- **Menu Bar** — choose what appears in the menu bar: status icon, CPU, memory, network ↓/↑, battery %, watts, free disk
-- **Alerts** — thresholds for sustained CPU load, swap, low disk space, battery health and battery temperature
+- **General**: run in the background, launch at login, refresh rate, °C/°F, bytes/bits
+- **Hot Corner**: which corner (or off), opening delay, include busiest apps, shortcut to clear a conflicting macOS hot corner
+- **Dashboard**: show/hide each section, per-core bars, number of apps listed, group helpers into apps
+- **Menu Bar**: heart-monitor icon, CPU, memory, network, battery %, watts, free disk
+- **Alerts**: thresholds for CPU load, swap, low disk space, battery health and temperature
 
-## Notes / v1 limitations
+## Notes
 
-- CPU/GPU die temperatures and fan speeds use private SMC interfaces on Apple Silicon, so v1 reports the system thermal state instead.
-- Wi-Fi network name (SSID) needs Location Services permission, so it's not shown.
-- Per-process lists (top CPU/memory apps) are a good candidate for v2.
+- macOS only lists Apple's own actions in System Settings › Hot Corners, so CorMon watches the corner itself (pointer position polling; no Accessibility permission needed). If macOS also has an action on that corner, both will fire. Pick a free corner or clear the macOS one.
+- The busiest-apps list covers processes you own. System daemons need administrator rights to read.
+- CPU/GPU die temperatures and fan speeds need private SMC interfaces on Apple Silicon, so CorMon shows the system thermal state instead.
 
 ## Project layout
 
 ```
 Package.swift
-build.sh                     → builds build/System Monitor.app
-Resources/Info.plist
+build.sh                     → builds build/CorMon.app
+Resources/                   Info.plist, AppIcon.icns, AppIcon.png
+Tools/make_icon.py           regenerates the app icon
 Sources/SystemMonitor/
-  SystemMonitorApp.swift     app entry, windows, menu bar item
+  SystemMonitorApp.swift     app entry, windows, menu bar item, background mode
+  Glance.swift               hot-corner watcher and at-a-glance panel
   Monitor.swift              sampling loop, history, health rules, prefs, formatting
   Collectors.swift           Mach/sysctl/IOKit/CoreWLAN readers
+  Processes.swift            per-app CPU & memory sampling (libproc)
   Models.swift               metric data types
+  Theme.swift                palette, type, canvas texture, gilt frames, menu bar glyph
+  Components.swift           gauges, sparklines, bars, cards
   DashboardView.swift        dashboard window and section cards
   MenuBarViews.swift         menu bar label + drop-down panel
   SettingsView.swift         customization window
-  Components.swift           gauges, sparklines, bars, cards
 ```
