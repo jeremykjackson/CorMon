@@ -4,19 +4,32 @@
 
 *A portrait of your Mac.* A lightweight, native SwiftUI system monitor for macOS, painted in the warm umbers, ochres and gilt frames of 19th-century academic oil painting (after Fernand Cormon). It lives in the menu bar, slides out of a hot corner, and opens a full dashboard. No dependencies, no daemons, no admin rights.
 
-## Build & run
+## Install & update
 
-Requires macOS 13 (Ventura) or newer and Xcode or the Command Line Tools (`xcode-select --install`).
+Requires macOS 13 (Ventura) or newer, Xcode or the Command Line Tools (`xcode-select --install`), and access to this private repo (`gh auth login`).
 
+**First time:**
 ```bash
-git clone https://github.com/jeremykjackson/CorMon.git
-cd CorMon
-./build.sh
-open build/CorMon.app
+git clone https://github.com/jeremykjackson/CorMon.git ~/CorMon
+~/CorMon/install.sh
 ```
 
-To keep it: `cp -R build/CorMon.app /Applications/` (needed for **Launch at login**).
-It's ad-hoc signed, not notarized, so the first launch from Finder may need right-click → **Open**.
+**Every update after that:**
+```bash
+~/CorMon/install.sh
+```
+
+The installer pulls the latest code from GitHub, builds it, quits the running copy, installs `CorMon.app` into `/Applications` and relaunches it. If you're already on the latest version it says so and skips the build. Your settings and the login item carry over.
+
+| Option | What it does |
+|---|---|
+| `--force` | Rebuild and reinstall even if already up to date |
+| `--no-launch` | Don't open CorMon afterwards |
+| `--dir PATH` | Keep the source somewhere other than `~/CorMon` |
+
+Tip: add `alias cormon-update="~/CorMon/install.sh"` to `~/.zshrc` to update with one word.
+
+To build without installing, run `./build.sh`. It produces `build/CorMon.app`, which is ad-hoc signed and not notarized.
 
 ## What's new in 2.0
 
@@ -68,6 +81,7 @@ If you want it lighter still, set **Refresh every** to 5 seconds in Settings.
 
 ```
 Package.swift
+install.sh                   → pulls the latest, builds and installs into /Applications
 build.sh                     → builds build/CorMon.app
 Resources/                   Info.plist, AppIcon.icns, AppIcon.png
 Tools/make_icon.py           regenerates the app icon
