@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DashboardView: View {
+    // Re-render this window's root when the look changes (see Appearance).
+    @AppStorage(Prefs.appearance) private var appearanceRaw = Appearance.gallery.rawValue
     @EnvironmentObject var monitor: SystemMonitor
     @Environment(\.openWindow) private var openWindow
 
@@ -74,7 +76,7 @@ struct SystemHeader: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CorMon").font(Typo.title(34)).foregroundStyle(Palette.giltLight)
+                    BrandTitle(size: 34)
                     Text("Portrait of a \(s.model.isEmpty ? "Mac" : s.model)")
                         .font(Typo.titleItalic(16)).foregroundStyle(Palette.ivory)
                     Text([s.chip, s.osVersion, s.hostName].filter { !$0.isEmpty }.joined(separator: "  ·  "))
@@ -121,6 +123,25 @@ struct SystemHeader: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(Typo.titleItalic(12)).foregroundStyle(Palette.parchment)
             Text(value).font(Typo.numeral(17)).foregroundStyle(color ?? Palette.ivory)
+        }
+    }
+}
+
+/// The "CorMon" wordmark; in Canvas it sits on a loose brushstroke highlight.
+struct BrandTitle: View {
+    var size: CGFloat
+
+    var body: some View {
+        let text = Text("CorMon").font(Typo.title(size)).foregroundStyle(Palette.giltLight)
+        if Appearance.current == .canvas {
+            text.background(alignment: .bottomLeading) {
+                BrushStroke(seed: 7, roughness: 0.3)
+                    .fill(Palette.sienna.opacity(0.28))
+                    .frame(width: size * 4.6, height: size * 0.55)
+                    .offset(x: -size * 0.15, y: -size * 0.02)
+            }
+        } else {
+            text
         }
     }
 }
@@ -182,15 +203,9 @@ struct PerCoreBars: View {
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(values.indices, id: \.self) { i in
                     let tint: Color = i < efficiencyCount ? Palette.leadWhite : .cpuTint
-                    ZStack(alignment: .bottom) {
-                        RoundedRectangle(cornerRadius: 2).fill(Palette.well)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(LinearGradient(colors: [tint, tint.opacity(0.55)], startPoint: .top, endPoint: .bottom))
-                            .frame(height: max(2, 34 * min(values[i], 1)))
-                    }
-                    .frame(height: 34)
-                    .frame(maxWidth: .infinity)
-                    .help("Core \(i): \(Fmt.percent(values[i]))")
+                    CoreBar(fraction: values[i], tint: tint, seed: 200 + i * 7)
+                        .frame(maxWidth: .infinity)
+                        .help("Core \(i): \(Fmt.percent(values[i]))")
                 }
             }
         }
@@ -254,7 +269,8 @@ struct TopAppsCard: View {
     @AppStorage(Prefs.topAppCount) private var count = 5
 
     var body: some View {
-        Card(title: "Busiest Apps", subtitle: "les ouvriers", icon: "person.3.sequence", tint: Palette.giltLight,
+        Card(title: "Busiest Apps", subtitle: "les ouvriers", icon: "person.3.sequence",
+             tint: Appearance.current == .gallery ? Palette.giltLight : Palette.gilt,
              detail: "your processes") {
             AppList(title: "By processor", apps: Array(m.topCPU.prefix(count)), metric: .cpu)
             Fleuron().padding(.horizontal, 40)
@@ -547,12 +563,7 @@ struct NetworkCard: View {
 
     private func rateBlock(symbol: String, label: String, rate: Double, tint: Color) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Palette.well))
-                .overlay(Circle().strokeBorder(tint.opacity(0.6), lineWidth: 1))
+            IconBadge(symbol: symbol, tint: tint, size: 26)
             VStack(alignment: .leading, spacing: 0) {
                 Text(label).font(Typo.titleItalic(12)).foregroundStyle(Palette.parchment)
                 Text(Fmt.rate(rate, bits: inBits)).font(Typo.numeral(19))

@@ -201,6 +201,8 @@ final class GlancePanelController: NSObject {
 // MARK: - Glance view
 
 struct GlanceView: View {
+    // Re-render this window's root when the look changes (see Appearance).
+    @AppStorage(Prefs.appearance) private var appearanceRaw = Appearance.gallery.rawValue
     @EnvironmentObject var m: SystemMonitor
     @AppStorage(Prefs.glanceShowApps) private var showApps = true
     @AppStorage(Prefs.networkInBits) private var inBits = false
@@ -236,7 +238,7 @@ struct GlanceView: View {
         .frame(width: 330)
         .background(
             CanvasBackground()
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Appearance.current.frameRadius(10), style: .continuous))
         )
         .giltFrame(cornerRadius: 10)
         .padding(14)                     // room for the shadow inside the transparent panel

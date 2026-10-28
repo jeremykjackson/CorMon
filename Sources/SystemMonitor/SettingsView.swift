@@ -3,6 +3,8 @@ import AppKit
 import ServiceManagement
 
 struct SettingsView: View {
+    // Re-render this window's root when the look changes (see Appearance).
+    @AppStorage(Prefs.appearance) private var appearanceRaw = Appearance.gallery.rawValue
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -57,6 +59,7 @@ private struct Footnote: View {
 
 struct GeneralSettings: View {
     @EnvironmentObject var monitor: SystemMonitor
+    @AppStorage(Prefs.appearance) private var appearance = Appearance.gallery.rawValue
     @AppStorage(Prefs.refreshInterval) private var refreshInterval = 2.0
     @AppStorage(Prefs.runInBackground) private var runInBackground = false
     @AppStorage(Prefs.useFahrenheit) private var useFahrenheit = false
@@ -66,6 +69,19 @@ struct GeneralSettings: View {
 
     var body: some View {
         SettingsPage {
+            Section {
+                Picker("Look", selection: $appearance) {
+                    ForEach(Appearance.allCases) { look in
+                        (Text(look.title) + Text("  ·  \(look.summary)").foregroundColor(Palette.parchment))
+                            .tag(look.rawValue)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("Appearance")
+            } footer: {
+                Footnote(text: "Applies to the dashboard, menu bar panel, glance panel and this window. Gallery is always dark and Canvas always light; Mac Glass follows your Light/Dark setting and accent color.")
+            }
             Section {
                 Toggle("Run in the background", isOn: $runInBackground)
                     .onChange(of: runInBackground) { on in AppMode.apply(runInBackground: on) }

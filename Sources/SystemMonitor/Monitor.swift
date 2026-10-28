@@ -4,6 +4,7 @@ import Combine
 // MARK: - Preferences
 
 enum Prefs {
+    static let appearance = "appearance"                 // Appearance raw value (gallery / canvas / glass)
     static let refreshInterval = "refreshInterval"
     static let runInBackground = "runInBackground"
     static let legacyShowDockIcon = "showDockIcon"
@@ -49,6 +50,7 @@ enum Prefs {
             d.set(!d.bool(forKey: legacyShowDockIcon), forKey: runInBackground)
         }
         d.register(defaults: [
+            appearance: "gallery",
             refreshInterval: 2.0,
             runInBackground: false,
             glanceCorner: GlanceCorner.bottomLeft.rawValue,
@@ -111,7 +113,9 @@ final class SystemMonitor: ObservableObject {
     private var defaultsObserver: NSObjectProtocol?
 
     /// Windows currently showing detailed data (dashboard, menu panel, glance panel).
-    private var viewers: Set<String> = []
+    /// Open views that list apps, counted per id. A count (not a set) because switching looks
+    /// rebuilds a window's views, and the new onAppear may arrive before the old onDisappear.
+    private var viewers: [String: Int] = [:]
 
     var overallStatus: OverallStatus {
         if issues.contains(where: { $0.level == .critical }) { return .critical }
@@ -152,7 +156,8 @@ final class SystemMonitor: ObservableObject {
     /// CorMon only samples what the menu bar and health alerts need.
     func setViewer(_ id: String, visible: Bool) {
         let wasDetailed = !viewers.isEmpty
-        if visible { viewers.insert(id) } else { viewers.remove(id) }
+        let count = (viewers[id] ?? 0) + (visible ? 1 : -1)
+        viewers[id] = count > 0 ? count : nil
         let detailed = !viewers.isEmpty
         guard detailed != wasDetailed else { return }
         let collector = self.collector

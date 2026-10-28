@@ -26,6 +26,8 @@ struct MenuBarLabel: View {
 
 /// The panel that drops down from the menu bar item.
 struct MenuPopoverView: View {
+    // Re-render this window's root when the look changes (see Appearance).
+    @AppStorage(Prefs.appearance) private var appearanceRaw = Appearance.gallery.rawValue
     @EnvironmentObject var m: SystemMonitor
     @Environment(\.openWindow) private var openWindow
 
@@ -41,7 +43,7 @@ struct MenuPopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("CorMon").font(Typo.title(20)).foregroundStyle(Palette.giltLight)
+                    BrandTitle(size: 20)
                     Text(m.system.model.isEmpty ? "System Monitor" : m.system.model)
                         .font(Typo.titleItalic(12)).foregroundStyle(Palette.ivory).lineLimit(1)
                     Text("Up \(Fmt.duration(m.system.uptime)) · Thermal \(m.system.thermalState.label)")
@@ -164,12 +166,7 @@ struct CompactRow<Graph: View>: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(Palette.well))
-                .overlay(Circle().strokeBorder(tint.opacity(0.6), lineWidth: 1))
+            IconBadge(symbol: icon, tint: tint)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(title).font(Typo.title(14)).foregroundStyle(Palette.ivory).lineLimit(1)

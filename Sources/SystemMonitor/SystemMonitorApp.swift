@@ -70,6 +70,7 @@ enum AppMode {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Appearance.startObserving()
         let background = UserDefaults.standard.bool(forKey: Prefs.runInBackground)
         AppMode.apply(runInBackground: background)
         SystemMonitor.shared.start()
