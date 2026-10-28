@@ -68,7 +68,7 @@ main() {
   if [ ! -d "$src_dir/.git" ]; then
     [ -e "$src_dir" ] && [ -n "$(ls -A "$src_dir" 2>/dev/null)" ] \
       && fail "$src_dir exists but isn't a CorMon checkout. Pass --dir with another path."
-    step "Cloning CorMon into $src_dir…"
+    step "Cloning CorMon into ${src_dir}…"
     git clone --branch "$BRANCH" "$REPO_URL" "$src_dir" \
       || fail "Clone failed. The repo is private. Sign in first with: gh auth login"
     pull=0
@@ -171,7 +171,7 @@ main() {
   local old_version=""
   [ -d "$dest" ] && old_version="$(plist_get "$dest/Contents/Info.plist" CFBundleShortVersionString)"
 
-  step "Installing to $dest…"
+  step "Installing to ${dest}…"
   rm -rf "$dest"
   ditto "$built" "$dest"
   # Refresh Launch Services so Finder, Spotlight and the Dock pick up the new icon/version.
